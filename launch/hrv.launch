@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="heart_rate_monitor" name="ble_driver" type="BLEHeartRateLogger.py" output="screen"/>
+    <node pkg="heart_rate_monitor" name="hrv_analysis" type="hrv_node.py" output="screen"/>
+</launch>
