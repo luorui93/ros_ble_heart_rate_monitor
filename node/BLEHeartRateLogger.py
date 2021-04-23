@@ -35,9 +35,9 @@ class BLEHeartRateLogger:
     def __init__(self):
         rospy.loginfo("Initializaing")
         self.heart_measure_pub = rospy.Publisher('heart_measurements', HeartMeasurements, queue_size=10)
-        self.mac = rospy.get_param('mac', 'D2:E8:BE:50:16:A8')
-        self.hr_handle = rospy.get_param('hr_handle', '0x0027')
-        self.hr_ctl_handle = rospy.get_param('hr_ctl_handle', '0x0028')
+        self.mac = rospy.get_param('~mac', 'F4:F4:FB:EC:26:BB')
+        self.hr_handle = rospy.get_param('~hr_handle', '0x0027')
+        self.hr_ctl_handle = rospy.get_param('~hr_ctl_handle', '0x0028')
 
 
     def parse_args(self):
@@ -54,7 +54,7 @@ class BLEHeartRateLogger:
         parser.add_argument("-v", action='store_true', help="Verbose output")
         parser.add_argument("-d", action='store_true', help="Enable debug of gatttool")
 
-        confpath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "tickr.conf")
+        confpath = os.path.join(os.path.dirname(os.path.realpath(__file__)), "rhythm.conf")
         if os.path.exists(confpath):
 
             config = configparser.ConfigParser()
@@ -189,7 +189,6 @@ class BLEHeartRateLogger:
         """
         main routine to which orchestrates everything
         """
-        rospy.init_node("heart_rate_monitor_node")
 
         if sqlfile is not None:
             # Init database connection
@@ -276,12 +275,14 @@ class BLEHeartRateLogger:
             if hr_ctl_handle:
                 # We send the request to get HRM notifications
                 gt.sendline("char-write-req " + hr_ctl_handle + " 0100")
+                rospy.loginfo("writting request to {0}".format(hr_ctl_handle))
 
             # Time period between two measures. This will be updated automatically.
             period = 1.
             last_measure = time.time() - period
             hr_expect = "Notification handle = " + hr_handle + " value: ([0-9a-f ]+)"
 
+            r = rospy.Rate(1)
             while not rospy.is_shutdown():
                 try:
                     gt.expect(hr_expect, timeout=10)
@@ -321,20 +322,19 @@ class BLEHeartRateLogger:
 
                 # Publish responses
                 try:
-                    log.debug("Heart rate: " + str(res["hr"]))
-                    log.debug("RR-Intervals: " + str(res["rr"]))
-                    rospy.loginfo("Heart rate published: " + str(res["hr"]))
-                    rospy.loginfo("RR-Intervals published: " + str(res["rr"]))
                     hm = HeartMeasurements()
                     hm.stamp = rospy.get_rostime()
                     hm.heart_rate = res["hr"]
+                    rospy.loginfo("Heart rate published: " + str(res["hr"]))
+                    log.debug("Heart rate: " + str(res["hr"]))
                     hm.rr_intervals = res["rr"]
-                    self.heart_measure_pub.publish(hm)
+                    log.debug("RR-Intervals: " + str(res["rr"]))
+                    rospy.loginfo("RR-Intervals published: " + str(res["rr"]))
                 except KeyError as e:
                     rospy.logerr("heart measurements: {0} is not avaiable".format(e))
                     # rospy.signal_shutdown("Shuting down...")
-                    continue
-                continue
+                self.heart_measure_pub.publish(hm)
+                r.sleep()
 
         # We quit close the BLE connection properly
         gt.sendline("quit")
@@ -365,7 +365,7 @@ class BLEHeartRateLogger:
 
 
 if __name__ == "__main__":
-
+    rospy.init_node("ble_driver")
     hr_logger = BLEHeartRateLogger()
     hr_logger.cli()
     rospy.spin()
