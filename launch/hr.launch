@@ -1,0 +1,21 @@
+<launch>
+    <arg name="rhythm" default="true"/>
+    <arg name="tickr" default="false"/>
+    <arg name="rhythm_mac" default="F4:F4:FB:EC:26:BB"/>
+    <arg name="rhythm_hr_handle" default="0x001f"/>
+    <arg name="rhythm_hr_ctl_handle" default="0x0020"/>
+    <arg name="tickr_mac" default="D2:E8:BE:50:16:A8"/>
+    <arg name="tickr_hr_handle" default="0x0027"/>
+    <arg name="tickr_hr_ctl_handle" default="0x0028"/>
+
+    <node if="$(arg rhythm)" pkg="heart_rate_monitor" name="rhythm_node" type="ble_heart_rate_monitor_node.py" output="screen">
+        <param name="mac" value="$(arg rhythm_mac)"/>
+        <param name="hr_handle" value="$(arg rhythm_hr_handle)"/>
+        <param name="hr_ctl_handle" value="$(arg rhythm_hr_ctl_handle)"/>
+    </node>
+    <node if="$(arg tickr)" pkg="heart_rate_monitor" name="tickr_node" type="ble_heart_rate_monitor_node.py" output="screen">
+        <param name="mac" value="$(arg tickr_mac)"/>
+        <param name="hr_handle" value="$(arg tickr_hr_handle)"/>
+        <param name="hr_ctl_handle" value="$(arg tickr_hr_ctl_handle)"/>
+    </node>
+</launch>
