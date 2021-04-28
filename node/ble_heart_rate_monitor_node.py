@@ -9,8 +9,8 @@ from heart_rate_monitor.msg import HeartMeasurements
 
 class BLEHeartRateMonitor:
     def __init__(self):
-        rospy.init_node("heart_rate_monitor_node", log_level=rospy.DEBUG)
-        rospy.loginfo(rospy.get_name()+": Initializaing")
+        rospy.init_node("heart_rate_monitor_node", log_level=rospy.INFO)
+        rospy.loginfo(rospy.get_name()+": Initializing...")
         self.heart_measure_pub = rospy.Publisher('~heart_measurements', HeartMeasurements, queue_size=10)
         self.mac = rospy.get_param('~mac', '')
         self.notify_handle = rospy.get_param('~hr_handle', '')
@@ -28,15 +28,41 @@ class BLEHeartRateMonitor:
 
     def __publish_measurements(self):
         try:
-            rospy.loginfo(rospy.get_name()+": Heart rate published: " + str(self.res["hr"]))
-            rospy.loginfo(rospy.get_name()+": RR-Intervals published: " + str(self.res["rr"]))
             hm = HeartMeasurements()
             hm.stamp = rospy.get_rostime()
             hm.heart_rate = self.res["hr"]
+            rospy.loginfo(rospy.get_name()+": Heart rate published: " + str(self.res["hr"]))
             hm.rr_intervals = self.res["rr"]
-            self.heart_measure_pub.publish(hm)
+            rospy.loginfo(rospy.get_name()+": RR-Intervals published: " + str(self.res["rr"]))
         except KeyError as e:
             rospy.logwarn_throttle(10,rospy.get_name()+": heart measurements: {0} is not avaiable".format(e))
+        
+        self.heart_measure_pub.publish(hm)
+    
+    def __connect(self, retry):
+        """
+        connect with ble device through gatttool, return a pexpect object
+        """
+        while True:
+            try:
+                gt = pexpect.spawn("gatttool -b " + self.mac +" -t random --char-write-req -a " + self.write_handle + " -n 0100 --listen")
+                connect_expect = "Characteristic value was written successfully"
+                gt.expect(connect_expect, timeout=10)
+                break
+            except (pexpect.TIMEOUT, pexpect.EOF) as e:
+                rospy.logerr_throttle(10, rospy.get_name()+": Failed to connect to device, please check connection and handle settings")
+                if (retry):
+                    rospy.logwarn_throttle(10, "Reconnecting...")
+                else:
+                    exit(0)
+            except KeyboardInterrupt:
+                rospy.loginfo(rospy.get_name()+": Received keyboard interrupt. Quitting cleanly.")
+                retry = False
+                exit(0)
+            if (not retry):
+                break
+        
+        return gt
 
     def __interpret(self, data):
         """
@@ -83,24 +109,22 @@ class BLEHeartRateMonitor:
 
 
     def run(self):
-        #use gatttool to get ble device reading
-        gt = pexpect.spawn("gatttool -b " + self.mac +" -t random --char-write-req -a " + self.write_handle + " -n 0100 --listen")
-        connect_expect = "Characteristic value was written successfully"
-        try:
-            gt.expect(connect_expect, timeout=10)
-        except pexpect.TIMEOUT:
-            rospy.logerr(rospy.get_name()+": Failed sending request to device, please check connection and handle settings")
-            exit(0)
+        #use gatttool to get ble device reading, no retry in the beginning
+        gt = self.__connect(retry=False)
         resp_expect = "Notification handle = " + self.notify_handle + " value: ([0-9a-f ]+)"
         retry = True
         while (retry and not rospy.is_shutdown()):
             try:
                 rospy.logdebug(rospy.get_name()+": Expecting: "+resp_expect)
-                gt.expect(resp_expect, timeout=10)
-            except pexpect.TIMEOUT:
+                gt.expect(resp_expect, timeout=5)
+            except (pexpect.TIMEOUT, pexpect.EOF) as e:
                 # If the timer expires, it means that we have lost the
                 # connection with the HR monitor
-                log.warn(rospy.get_name()+": Connection lost with " + self.mac + ". Reconnecting.")
+                rospy.logwarn(rospy.get_name()+": Connection lost with " + self.mac + ". Reconnecting.")
+                gt.close(True)
+                # respawn a new porcess and reconnect, we only try to reconnect during the process
+                gt = self.__connect(retry=True)
+                continue
             
             except KeyboardInterrupt:
                 # Stop retrying when keyboard interrupt is received
